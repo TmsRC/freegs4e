@@ -2856,6 +2856,9 @@ class PsiGuessGaussian:
         return psi
 
 
+from scipy.optimize import least_squares
+
+
 class PsiGuessParabolicJtor:
     def __init__(self, h, k, a, b, Ip):
         """A class to generate the initial psi guess from an elliptic description
@@ -2896,12 +2899,71 @@ class PsiGuessParabolicJtor:
 
     @classmethod
     def from_xpoint_and_midplane(cls, Rx, Zx, Ri, Ro, Zm, Ip):
+        """Finds the elliptic distribution function that produces a boundary
+        according to the desired X-point location (Rx, Zx), inner midplane (Ri, Zm),
+        and outer midplane (Ro, Zm).
+
+        This assumes that the centroid of the ellipse (where the distribution function
+        is 0) occurs radially at the average of Rx, Ri, Ro.
+        """
         h = (Rx + Ri + Ro) / 3
         k = Zm
         a = (Ro - Ri) / 2
         b = Zx - Zm
 
         return cls(h, k, a, b, Ip)
+
+    @classmethod
+    def from_separatrix_points(cls, Ip: float, *points):
+        """Finds the elliptic distribution function that best fits the
+        provided points that describe the desired core's separatrix.
+
+        Parameters
+        ----------
+        Ip : float
+            The desired plasma current [A].
+        points : tuple[tuple[float, float], ...]
+            A list of (R, Z) locations on the separatrix.
+
+        Notes
+        -----
+        This method requires at least 4 isoflux points
+        """
+        if len(points) < 4:
+            raise ValueError(
+                "At least 4 isoflux points required to approximate the ellipse shape parameters"
+            )
+
+        points_np = np.array(points)
+        Rpoints = points_np[:, 0]
+        Zpoints = points_np[:, 1]
+
+        def _func(args):
+            h, k, a, b = args.squeeze().tolist()
+
+            return cls._elliptic_function(Rpoints, Zpoints, h, k, a, b) - 1.0
+
+        result = least_squares(_func, [1.0] * 4, bounds=(0.0, np.inf))
+
+        return cls(*result.x.tolist(), Ip)
+
+    @staticmethod
+    def _elliptic_function(R, Z, h, k, a, b):
+        """Evaluates the elliptic function:
+            E(R, Z) = (R-h)^2/a^2 + (Z-k)^2/b^2
+
+        Parameters
+        ----------
+        h : float
+            The radial centre of the ellipse.
+        k : float
+            The vertical centre of the ellipse.
+        a : float
+            Half the length of the radial axis of the ellipse (normally the semi-major axis).
+        b : float
+            Half the length of the vertical axis of the ellipse (normally the semi-minor axis).
+        """
+        return (((R - h) ** 2) / a**2) + (((Z - k) ** 2) / b**2)
 
     def elliptic_distribution_function(self, R, Z):
         """The elliptic distribution function (E(R, Z)) for the ellipse represented by this class.
@@ -2913,8 +2975,8 @@ class PsiGuessParabolicJtor:
         Z : float | ndarray
             The vertical position(s) to evaluate the distribution function at.
         """
-        return (((R - self._h) ** 2) / self._a**2) + (
-            ((Z - self._k) ** 2) / self._b**2
+        return self._elliptic_function(
+            R, Z, self._h, self._k, self._a, self._b
         )
 
     def parabolic_jtor(self, eq, Ip, *, a=2, b=2):
