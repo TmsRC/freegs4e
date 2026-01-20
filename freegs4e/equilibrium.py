@@ -25,9 +25,10 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 import shapely as sh
-from numpy import array, exp, linspace, meshgrid, pi
+from numpy import exp, linspace, meshgrid, pi
 from scipy import interpolate
 from scipy.integrate import cumulative_trapezoid
+from scipy.optimize import least_squares
 from scipy.spatial.distance import pdist, squareform
 
 from . import critical, machine, multigrid, polygons  # multigrid solver
@@ -2856,11 +2857,8 @@ class PsiGuessGaussian:
         return psi
 
 
-from scipy.optimize import least_squares
-
-
 class PsiGuessParabolicJtor:
-    def __init__(self, h, k, a, b, Ip):
+    def __init__(self, h, k, a, b, Ip, *, psi_scale=1.0):
         """A class to generate the initial psi guess from an elliptic description
         of the plasma boundary and the plasma current.
 
@@ -2886,6 +2884,8 @@ class PsiGuessParabolicJtor:
             Half the length of the vertical axis of the ellipse (normally the semi-minor axis).
         Ip : float
             The desired plasma current [A].
+        psi_scale : float
+            Multiplies the psi estimate when calling this class before returning.
 
         References
         ----------
@@ -2896,9 +2896,12 @@ class PsiGuessParabolicJtor:
         self._a = a
         self._b = b
         self._Ip = Ip
+        self._psi_scale = psi_scale
 
     @classmethod
-    def from_xpoint_and_midplane(cls, Rx, Zx, Ri, Ro, Zm, Ip):
+    def from_xpoint_and_midplane(
+        cls, Rx, Zx, Ri, Ro, Zm, Ip, *, psi_scale=1.0
+    ):
         """Finds the elliptic distribution function that produces a boundary
         according to the desired X-point location (Rx, Zx), inner midplane (Ri, Zm),
         and outer midplane (Ro, Zm).
@@ -2911,10 +2914,10 @@ class PsiGuessParabolicJtor:
         a = (Ro - Ri) / 2
         b = Zx - Zm
 
-        return cls(h, k, a, b, Ip)
+        return cls(h, k, a, b, Ip, psi_scale=psi_scale)
 
     @classmethod
-    def from_separatrix_points(cls, Ip: float, *points):
+    def from_separatrix_points(cls, Ip: float, *points, psi_scale=1.0):
         """Finds the elliptic distribution function that best fits the
         provided points that describe the desired core's separatrix.
 
@@ -2945,7 +2948,7 @@ class PsiGuessParabolicJtor:
 
         result = least_squares(_func, [1.0] * 4, bounds=(0.0, np.inf))
 
-        return cls(*result.x.tolist(), Ip)
+        return cls(*result.x.tolist(), Ip, psi_scale=psi_scale)
 
     @staticmethod
     def _elliptic_function(R, Z, h, k, a, b):
@@ -2979,7 +2982,7 @@ class PsiGuessParabolicJtor:
             R, Z, self._h, self._k, self._a, self._b
         )
 
-    def parabolic_jtor(self, eq, Ip, *, a=2, b=2):
+    def parabolic_jtor(self, eq, Ip, *, a=2.0, b=2.0):
         """Calculate the Jtor assuming a parabolic current distribution for the given equilibrium.
 
         Solves the equation:
@@ -3029,7 +3032,7 @@ class PsiGuessParabolicJtor:
         psi[-1, :] = 0.0
         psi[:, -1] = 0.0
 
-        return psi
+        return self._psi_scale * psi
 
 
 if __name__ == "__main__":
