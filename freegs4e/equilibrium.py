@@ -162,6 +162,14 @@ class Equilibrium:
             raise ValueError("Shape of psi must match grid size (nx, ny).")
         self.plasma_psi = psi
 
+    def create_psi_plasma_default(
+        self, adaptive_centre=False, gpars=(0.5, 0.5, 0, 2)
+    ):
+        """This method is kept for backwards compatibility and will generate a Gaussian-shaped
+        initial guess for the plasma flux. It is NOT called by this class anymore.
+        """
+        return PsiGuessGaussian(adaptive_centre, gpars)
+
     def setSolverVcycle(self, nlevels=1, ncycle=1, niter=1, direct=True):
         """
         Sets a new linear solver based on the multigrid scheme.
