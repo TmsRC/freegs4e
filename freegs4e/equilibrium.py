@@ -168,7 +168,7 @@ class Equilibrium:
         """This method is kept for backwards compatibility and will generate a Gaussian-shaped
         initial guess for the plasma flux. It is NOT called by this class anymore.
         """
-        return PsiGuessGaussian(adaptive_centre, gpars)
+        return PsiGuessGaussian(adaptive_centre, gpars)(self)
 
     def setSolverVcycle(self, nlevels=1, ncycle=1, niter=1, direct=True):
         """
@@ -2990,7 +2990,7 @@ class PsiGuessParabolicJtor:
             R, Z, self._h, self._k, self._a, self._b
         )
 
-    def parabolic_jtor(self, eq, Ip, *, a=2.0, b=2.0):
+    def parabolic_jtor(self, eq, Ip, *, a=1.87, b=1.5):
         """Calculate the Jtor assuming a parabolic current distribution for the given equilibrium.
 
         Solves the equation:
