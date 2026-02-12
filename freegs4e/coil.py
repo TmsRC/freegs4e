@@ -30,14 +30,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Rectangle
 
-from .gradshafranov import (
-    Greens,
-    GreensBr,
-    GreensBz,
-    GreensdBrdr,
-    GreensdBzdz,
-    mu0,
-)
+from .gradshafranov import Greens, GreensBr, GreensBz, GreensdBrdr, GreensdBzdz, mu0
 
 
 class AreaCurrentLimit:
