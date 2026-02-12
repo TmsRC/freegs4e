@@ -195,6 +195,26 @@ def plotIOConstraints(control, axis=None, show=True):
             label="Null points",
         )
 
+    # locations of the 2nd order null points
+    if control.null_points_2nd_order is not None:
+        axis.plot(
+            control.null_points_2nd_order[0],
+            control.null_points_2nd_order[1],
+            "1",
+            color="orange",
+            markersize=10,
+            markeredgewidth=2.0,
+        )
+        axis.plot(
+            [],
+            [],
+            "1",
+            color="orange",
+            markersize=10,
+            markeredgewidth=2.0,
+            label="2nd order null points",
+        )
+
     # plot isoflux constraints
     if control.isoflux_set is not None:
         color = [
