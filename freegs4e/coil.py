@@ -35,6 +35,8 @@ from .gradshafranov import (
     GreensBr,
     GreensBz,
     GreensdBrdr,
+    GreensdBrdz,
+    GreensdBzdr,
     GreensdBzdz,
     mu0,
 )
@@ -185,6 +187,18 @@ class Coil:
         """
         return self.controldBzdz(R, Z)
 
+    def createdBrdzGreensVec(self, R, Z):
+        """
+        Calculate dBrdz Greens functions
+        """
+        return self.controldBrdz(R, Z)
+
+    def createdBzdrGreensVec(self, R, Z):
+        """
+        Calculate dBzdr Greens functions
+        """
+        return self.controldBzdr(R, Z)
+
     def calcPsiFromGreens(self, pgreen):
         """
         Calculate plasma psi from Greens functions and current
@@ -231,6 +245,26 @@ class Coil:
             bz = 0
         return bz
 
+    def dBrdz(self, R, Z):
+        """
+        Calculate magnetic field dBrdz at (R,Z)
+        """
+        if np.abs(self.current) > 1e-5:
+            br = self.controldBrdz(R, Z) * self.current
+        else:
+            br = 0
+        return br
+
+    def dBzdr(self, R, Z):
+        """
+        Calculate magnetic field dBzdr at (R,Z)
+        """
+        if np.abs(self.current) > 1e-5:
+            bz = self.controldBzdr(R, Z) * self.current
+        else:
+            bz = 0
+        return bz
+
     def controlPsi(self, R, Z):
         """
         Calculate poloidal flux at (R,Z) due to a unit current
@@ -260,6 +294,18 @@ class Coil:
         Calculate magnetic field dBzdz at (R,Z) due to a unit current
         """
         return GreensdBzdz(self.R, self.Z, R, Z) * self.turns
+
+    def controldBrdz(self, R, Z):
+        """
+        Calculate magnetic field dBrdz at (R,Z) due to a unit current
+        """
+        return GreensdBrdz(self.R, self.Z, R, Z) * self.turns
+
+    def controldBzdr(self, R, Z):
+        """
+        Calculate magnetic field dBzdr at (R,Z) due to a unit current
+        """
+        return GreensdBzdr(self.R, self.Z, R, Z) * self.turns
 
     def getForces(self, equilibrium):
         """
