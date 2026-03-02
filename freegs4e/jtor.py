@@ -973,10 +973,6 @@ class Lao85(Profile):
             psi_bndry = psi[0, 0]
         self.psi_bndry = psi_bndry
 
-        # grid sizes
-        dR = R[1, 0] - R[0, 0]
-        dZ = Z[0, 1] - Z[0, 0]
-
         if torefine:
             R = 1.0 * refineR
 
@@ -1046,6 +1042,10 @@ class Lao85(Profile):
 
         # if Ip normalisation is required, do it
         if self.Ip_logic:
+            # grid sizes
+            dR = R[1, 0] - R[0, 0]
+            dZ = Z[0, 1] - Z[0, 0]
+
             jtorIp = np.sum(Jtor)
             if jtorIp == 0:
                 self.problem_psi = psi
