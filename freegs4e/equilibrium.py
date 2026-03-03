@@ -159,7 +159,9 @@ class Equilibrium:
             psi = psi(self)
 
         if psi.shape != (nx, ny):
-            raise ValueError("Shape of psi must match grid size (nx, ny).")
+            raise ValueError(
+                f"Shape of psi grid {psi.shape} must match grid size ({nx}, {ny})."
+            )
         self.plasma_psi = psi
 
     def create_psi_plasma_default(
