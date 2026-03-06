@@ -84,7 +84,8 @@ class Equilibrium:
             or `fixedBoundary`.
         psi : np.array | None | callable
             Initial guess for plasma flux [Webers/2pi]. If `None`, default initial Gaussian-shaped
-            guess used. If a callable is provided it is called with the equilibrium to get the initial guess.
+            guess used. If a callable is provided, it is called with the equilibrium to get the initial guess.
+            The array (returned by the callable) must have the shape (nx, ny).
         current : float
             Plasma current [A].
         order : int
@@ -2992,11 +2993,11 @@ class PsiGuessParabolicJtor:
             R, Z, self._h, self._k, self._a, self._b
         )
 
-    def parabolic_jtor(self, eq, Ip, *, a=1.87, b=1.5):
+    def parabolic_jtor(self, eq, Ip, *, i=1.87, j=1.5):
         """Calculate the Jtor assuming a parabolic current distribution for the given equilibrium.
 
         Solves the equation:
-            Jtor = Jhat*(1-E(R,Z)^a)^b
+            Jtor = Jhat*(1-E(R,Z)^i)^j
         where Jhat is calculated according to the desired Ip.
 
         Parameters
@@ -3013,14 +3014,13 @@ class PsiGuessParabolicJtor:
         outside_core_mask = x > 1
         # Set x = 1 outside the core to ensure the plasma current
         # is only distributed within the core
-        # Jtor outside plasma = (1 - 1**a)**b = 0
+        # Jtor outside plasma = (1 - 1**i)**j = 0
         x[outside_core_mask] = 1.0
 
-        dR = eq.R[1, 0] - eq.R[0, 0]
-        dZ = eq.Z[0, 1] - eq.Z[0, 0]
-
-        Jtor_normalised = (1 - x**a) ** b
-        Jtor_integrated = np.sum(Jtor_normalised[~outside_core_mask]) * dR * dZ
+        Jtor_normalised = (1 - x**i) ** j
+        Jtor_integrated = (
+            np.sum(Jtor_normalised[~outside_core_mask]) * eq.dR * eq.dZ
+        )
 
         Jhat = Ip / Jtor_integrated
 
