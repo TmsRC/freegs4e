@@ -30,13 +30,11 @@ from scipy import interpolate
 from scipy.integrate import cumulative_trapezoid
 from scipy.spatial.distance import pdist, squareform
 
-from . import critical, machine, multigrid, polygons  # multigrid solver
+from . import critical, machine, polygons
 from .boundary import fixedBoundary, freeBoundary  # finds free-boundary
-from .gradshafranov import (  # operators which define the G-S equation
-    GSsparse,
-    GSsparse4thOrder,
-    mu0,
-)
+from .gradshafranov import mu0
+from .gs_solver import GSDSTSolver, GSLUSolver
+from .multigrid import createMultigridSolver
 
 
 class Equilibrium:
@@ -47,7 +45,7 @@ class Equilibrium:
 
     def __init__(
         self,
-        tokamak=machine.EmptyTokamak(),
+        tokamak=None,
         Rmin=0.1,
         Rmax=2.0,
         Zmin=-1.0,
@@ -57,7 +55,9 @@ class Equilibrium:
         boundary=freeBoundary,
         psi=None,
         current=0.0,
+        solver_type="LUsparse",
         order=4,
+        **mg_kwargs,
     ):
         """
         Initializes a plasma equilibrium.
@@ -85,13 +85,22 @@ class Equilibrium:
             Initial guess for plasma flux [Webers/2pi]. If `None`, default initial guess used.
         current : float
             Plasma current [A].
+        solver_type: str
+            The type of linear solver to use for the GS equation. Supported options are 'LUsparse',
+            'DST', 'multigrid'.
         order : int
             Order of differential operators used in calculations.
             Must be either 2 or 4.
+        mg_kwargs
+            kwargs to pass to `setSolverVcycle` during multigrid solver initialization. Ignored
+            whenever `solver_type` != 'multigrid'.
         """
 
         # assign tokamak object
-        self.tokamak = tokamak
+        if tokamak:
+            self.tokamak = tokamak
+        else:
+            self.tokamak = machine.EmptyTokamak()
 
         # assign bounds of computational domain
         if Rmin > Rmax:
@@ -119,6 +128,7 @@ class Equilibrium:
         self.dZ = self.Z[0, 1] - self.Z[0, 0]
 
         # assign boundary function
+        # TODO: any validation on the boundary function??
         self._applyBoundary = boundary
 
         # assign initial guess for plasma flux (if None)
@@ -140,22 +150,19 @@ class Equilibrium:
         # assign plasma current
         self._current = current
 
-        # deinfe the GS solver
-        if order == 2:
-            generator = GSsparse(Rmin, Rmax, Zmin, Zmax)
-        elif order == 4:
-            generator = GSsparse4thOrder(Rmin, Rmax, Zmin, Zmax)
-        else:
-            raise ValueError(
-                "Invalid choice of order ({}). Valid values are 2 or 4.".format(
-                    order
-                )
-            )
-        self.order = order
+        # define the GS solver
 
-        self._solver = multigrid.createVcycle(
-            nx, ny, generator, nlevels=1, ncycle=1, niter=2, direct=True
-        )
+        if solver_type == "LUsparse":
+            self.setSolver(GSLUSolver(self.R, self.Z, order=order))
+        elif solver_type == "DST":
+            self.setSolver(GSDSTSolver(self.R, self.Z, order=order))
+        elif solver_type == "multigrid":
+            self.setSolverVcycle(order=order, **mg_kwargs)
+        else:
+            raise ValueError(f"Solver type {solver_type} not recognized")
+
+        # assign self.order AFTER the solver has been set, as the solvers own the validation checks
+        self.order = order
 
     def create_psi_plasma_default(
         self, adaptive_centre=False, gpars=(0.5, 0.5, 0, 2)
@@ -230,7 +237,9 @@ class Equilibrium:
 
         return psi
 
-    def setSolverVcycle(self, nlevels=1, ncycle=1, niter=1, direct=True):
+    def setSolverVcycle(
+        self, nlevels=1, ncycle=1, niter=1, direct=True, order=4
+    ):
         """
         Sets a new linear solver based on the multigrid scheme.
 
@@ -247,22 +256,25 @@ class Equilibrium:
             Number of linear solver (Jacobi) iterations per level.
         direct : bool
             If True, uses a direct solver at the coarsest level.
-
+        order : int
+            Order of differential operators used in calculations.
+            Must be either 2 or 4.
         Returns
         -------
         None
             This function modifies `self._solver` but does not return a value.
         """
 
-        # set the solver
-        self._solver = multigrid.createVcycle(
-            nx=self.nx,
-            ny=self.ny,
-            generator=GSsparse(self.Rmin, self.Rmax, self.Zmin, self.Zmax),
-            nlevels=nlevels,
-            ncycle=ncycle,
-            niter=niter,
-            direct=direct,
+        self.setSolver(
+            createMultigridSolver(
+                nx=self.nx,
+                ny=self.ny,
+                order=order,
+                nlevels=nlevels,
+                ncycle=ncycle,
+                niter=niter,
+                direct=direct,
+            )
         )
 
     def setSolver(self, solver):
