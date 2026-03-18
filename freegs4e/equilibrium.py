@@ -33,8 +33,6 @@ from scipy.spatial.distance import pdist, squareform
 from . import critical, machine, polygons
 from .boundary import fixedBoundary, freeBoundary  # finds free-boundary
 from .gradshafranov import mu0
-from .gs_solver import GSDSTSolver, GSLUSolver
-from .multigrid import createMultigridSolver
 
 
 class Equilibrium:
@@ -55,9 +53,7 @@ class Equilibrium:
         boundary=freeBoundary,
         psi=None,
         current=0.0,
-        solver_type="LUsparse",
-        order=4,
-        **mg_kwargs,
+        order=None,
     ):
         """
         Initializes a plasma equilibrium.
@@ -85,15 +81,9 @@ class Equilibrium:
             Initial guess for plasma flux [Webers/2pi]. If `None`, default initial guess used.
         current : float
             Plasma current [A].
-        solver_type: str
-            The type of linear solver to use for the GS equation. Supported options are 'LUsparse',
-            'DST', 'multigrid'.
         order : int
-            Order of differential operators used in calculations.
-            Must be either 2 or 4.
-        mg_kwargs
-            kwargs to pass to `setSolverVcycle` during multigrid solver initialization. Ignored
-            whenever `solver_type` != 'multigrid'.
+            Deprecated. Kept for backwards compatibility.
+
         """
 
         # assign tokamak object
@@ -128,7 +118,6 @@ class Equilibrium:
         self.dZ = self.Z[0, 1] - self.Z[0, 0]
 
         # assign boundary function
-        # TODO: any validation on the boundary function??
         self._applyBoundary = boundary
 
         # assign initial guess for plasma flux (if None)
@@ -150,19 +139,49 @@ class Equilibrium:
         # assign plasma current
         self._current = current
 
-        # define the GS solver
-
-        if solver_type == "LUsparse":
-            self.setSolver(GSLUSolver(self.R, self.Z, order=order))
-        elif solver_type == "DST":
-            self.setSolver(GSDSTSolver(self.R, self.Z, order=order))
-        elif solver_type == "multigrid":
-            self.setSolverVcycle(order=order, **mg_kwargs)
+        # order attribute is kept for backwards compatibility only
+        if order is not None:
+            warnings.warn(
+                "Order attribute of Equilibrium objects is deprecated. No solver is created inside Equilibrium.",
+                DeprecationWarning,
+            )
         else:
-            raise ValueError(f"Solver type {solver_type} not recognized")
+            order = 4
 
-        # assign self.order AFTER the solver has been set, as the solvers own the validation checks
-        self.order = order
+        self._order = order
+        self.__solver = None
+
+    @property
+    def order(self):
+        warnings.warn(
+            "Order attribute of Equilibrium objects is deprecated, as no solver is created",
+            DeprecationWarning,
+        )
+        return self._order
+
+    @order.setter
+    def order(self, value):
+        warnings.warn(
+            "Order attribute of Equilibrium objects is deprecated, as no solver is created",
+            DeprecationWarning,
+        )
+        self._order = value
+
+    @property
+    def _solver(self):
+        warnings.warn(
+            "Solver attribute of Equilibrium objects is deprecated. Equilibrium contains no linear solver.",
+            DeprecationWarning,
+        )
+        return self.__solver
+
+    @order.setter
+    def _solver(self, value):
+        warnings.warn(
+            "Solver attribute of Equilibrium objects is deprecated. Equilibrium contains no linear solver.",
+            DeprecationWarning,
+        )
+        self.__solver = value
 
     def create_psi_plasma_default(
         self, adaptive_centre=False, gpars=(0.5, 0.5, 0, 2)
