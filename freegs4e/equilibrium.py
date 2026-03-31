@@ -2405,7 +2405,8 @@ class Equilibrium:
     ):
         """
         Computes the radial separation (on the inboard and outboard sides) at vertical position `Z_level`
-        between flux surfaces passing through the lower and upper X-points.
+        between flux surfaces passing through the lower and upper X-points. This requires two X-points to
+        be located within the vessel region.
 
         The inboard dr_sep is defined as the difference in R (radial position) between
         the two flux surfaces intersecting `Z_level` on the inboard side (smaller R values),
@@ -2417,7 +2418,7 @@ class Equilibrium:
         Parameters
         ----------
         Z_level : float
-            Vertical height at which to calculate dr_sep [m].
+            Vertical height at which to calculate dr_sep [m]. Defaults to eq.Zgeoemtric().
         sign_flip : bool
             By convention, the function assumes the first X-point corresponds to the lower
             X-point, and the second to the upper X-point. So for an upper single null plasma,
@@ -2439,13 +2440,34 @@ class Equilibrium:
         psi_bndry = self.psi_bndry
         xpts = self.xpt
 
-        # compute absolute difference between each point's ψ and psi_bndry and then
-        # get indices of the two smallest differences
-        closest_indices = np.argsort(np.abs(xpts[:, 2] - psi_bndry))[:2]
+        # build polygon of the tokamak wall
+        polygon = sh.Polygon(
+            np.array([self.tokamak.wall.R, self.tokamak.wall.Z]).T
+        )
 
-        # extract the corresponding rows (two X-points closest to psi_bndry, then sort by lowest z coord z-point)
-        closest_xpts = xpts[closest_indices]
-        closest_xpts_sorted = closest_xpts[np.argsort(closest_xpts[:, 1])]
+        # find x-points inside the wall
+        mask = np.array(
+            [polygon.contains(sh.Point(x, y)) for x, y in xpts[:, 0:2]]
+        )
+
+        # select these x-points
+        xpts_inside_wall = xpts[mask, :]
+
+        # if less than two X-points inside wall, throw error
+        if xpts_inside_wall.shape[0] < 2:
+            raise ValueError(
+                f"Expected at least two X-points inside wall, got {xpts_inside_wall.shape[0]}."
+            )
+
+        # get the two closest to magnetic axis
+        mag_axis = self.magneticAxis()
+        distances = np.linalg.norm(
+            xpts_inside_wall[:, 0:2] - mag_axis[0:2], axis=1
+        )
+        closest_two = xpts_inside_wall[np.argsort(distances)[:2]]
+
+        # sort those two by Z (puts lowest X-point first)
+        closest_xpts_sorted = closest_two[np.argsort(closest_two[:, 1])]
 
         # find the flux contours for the values of psi_boundary at each X-point
         contour0 = plt.contour(
@@ -2510,12 +2532,11 @@ class Equilibrium:
         R_in_out1_stacked = np.vstack(R_in_out1)
 
         # clip rows so that we only obtain the two rows with R values closest to the magnetic axis
-        R_mag = self.Rmagnetic()
         R_in_out0_filtered = R_in_out0_stacked[
-            np.argsort(np.abs(R_in_out0_stacked[:, 0] - R_mag))[:2]
+            np.argsort(np.abs(R_in_out0_stacked[:, 0] - mag_axis[0]))[:2]
         ]
         R_in_out1_filtered = R_in_out1_stacked[
-            np.argsort(np.abs(R_in_out1_stacked[:, 0] - R_mag))[:2]
+            np.argsort(np.abs(R_in_out1_stacked[:, 0] - mag_axis[0]))[:2]
         ]
 
         # sort so that the lower X-point is first
