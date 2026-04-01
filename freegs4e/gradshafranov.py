@@ -627,3 +627,67 @@ def GreensdBrdr(Rc, Zc, R, Z, eps=2e-3):
     return (GreensBr(Rc, Zc, R + eps, Z) - GreensBr(Rc, Zc, R - eps, Z)) / (
         2.0 * eps
     )
+
+
+def GreensdBrdz(Rc, Zc, R, Z, eps=2e-3):
+    """
+    Calculate vertical derivative of radial magnetic field at (R,Z) due to a
+    single unit of current at (Rc,Zc) using Greens function for the
+    elliptic operator above:
+
+        dBr/dZ (R,Z) = (Br(R, Z + eps) - Br(R, Z - eps))/ 2 * eps.
+
+    Parameters
+    ----------
+    Rc : float
+        Radial position where current is located [m].
+    Zc : float
+        Vertical position where current is located [m].
+    R : float
+        Radial position where poloidal flux is to be calcualted [m].
+    Z : float
+        Vertical position where poloidal flux is to be calcualted [m].
+    eps : float
+        Small step size for numerical differentiation in the radial direction [m].
+
+    Returns
+    -------
+    float
+        Value of the derivative at (R,Z) [T/m].
+    """
+
+    return (GreensBr(Rc, Zc, R, Z + eps) - GreensBr(Rc, Zc, R, Z - eps)) / (
+        2.0 * eps
+    )
+
+
+def GreensdBzdr(Rc, Zc, R, Z, eps=2e-3):
+    """
+    Calculate radial derivative of vertical magnetic field at (R,Z) due to a
+    single unit of current at (Rc,Zc) using Greens function for the
+    elliptic operator above:
+
+        dBz/dR (R,Z) = (Bz(R + eps, Z) - Bz(R - eps, Z))/ 2 * eps.
+
+    Parameters
+    ----------
+    Rc : float
+        Radial position where current is located [m].
+    Zc : float
+        Vertical position where current is located [m].
+    R : float
+        Radial position where poloidal flux is to be calcualted [m].
+    Z : float
+        Vertical position where poloidal flux is to be calcualted [m].
+    eps : float
+        Small step size for numerical differentiation in the vertical direction [m].
+
+    Returns
+    -------
+    float
+        Value of the derivative at (R,Z) [T/m].
+    """
+
+    return (GreensBz(Rc, Zc, R + eps, Z) - GreensBz(Rc, Zc, R - eps, Z)) / (
+        2.0 * eps
+    )

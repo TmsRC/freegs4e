@@ -27,6 +27,7 @@ Homepage = "https://github.com/FusionComputingLab/freegs4e"
 
 [tool.isort]
 profile = "black"
+line_length = 79
 
 [tool.black]
 line-length = 79
