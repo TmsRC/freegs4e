@@ -631,11 +631,11 @@ def GreensdBrdr(Rc, Zc, R, Z, eps=2e-3):
 
 def GreensdBrdz(Rc, Zc, R, Z, eps=2e-3):
     """
-    Calculate radial derivative of radial magnetic field at (R,Z) due to a
+    Calculate vertical derivative of radial magnetic field at (R,Z) due to a
     single unit of current at (Rc,Zc) using Greens function for the
     elliptic operator above:
 
-        dBr/dZ (R,Z) = (Br(R, Z + eps) - Br(R, Z + eps))/ 2 * eps.
+        dBr/dZ (R,Z) = (Br(R, Z + eps) - Br(R, Z - eps))/ 2 * eps.
 
     Parameters
     ----------
@@ -663,7 +663,7 @@ def GreensdBrdz(Rc, Zc, R, Z, eps=2e-3):
 
 def GreensdBzdr(Rc, Zc, R, Z, eps=2e-3):
     """
-    Calculate vertical derivative of vertical magnetic field at (R,Z) due to a
+    Calculate radial derivative of vertical magnetic field at (R,Z) due to a
     single unit of current at (Rc,Zc) using Greens function for the
     elliptic operator above:
 
