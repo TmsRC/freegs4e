@@ -229,7 +229,7 @@ def plotIOConstraints(control, axis=None, show=True):
                 isoflux[0],
                 isoflux[1],
                 "+",
-                color=color[i],
+                color=color[i % len(color)],
                 markersize=10,
                 markeredgewidth=2.0,
             )
@@ -237,7 +237,7 @@ def plotIOConstraints(control, axis=None, show=True):
                 [],
                 [],
                 "+",
-                color=color[i],
+                color=color[i % len(color)],
                 label=f"Isoflux set ({i})",
                 markersize=10,
                 markeredgewidth=2.0,
@@ -309,10 +309,10 @@ def plotEquilibrium(
         psi = eq.psi()
         opt = eq._profiles.opt
         xpt = eq._profiles.xpt
-    except:
-        print(
-            "This equilibrium has not been solved: please solve for an equilbirium first!"
-        )
+    except AttributeError as e:
+        raise RuntimeError(
+            "This equilibrium has not been solved: please solve for an equilibrium first!"
+        ) from e
 
     # axes
     if axis is None:
@@ -346,7 +346,7 @@ def plotEquilibrium(
             eq.R,
             eq.Z,
             psi,
-            levels=[xpt[0, 2]],
+            levels=[xpt[0][2]],
             colors=colour,
             linestyles=style,
         )
@@ -363,7 +363,7 @@ def plotEquilibrium(
         for r, z, _ in xpt:
             axis.plot(r, z, "rx", markersize=9)
         axis.plot(
-            xpt[0, 0], xpt[0, 1], "rx", markersize=9, markeredgewidth=2.5
+            xpt[0][0], xpt[0][1], "rx", markersize=9, markeredgewidth=2.5
         )
         axis.plot([], [], "rx", markersize=9, label="X-points")
         axis.plot(
