@@ -25,9 +25,10 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 import shapely as sh
-from numpy import array, exp, linspace, meshgrid, pi
+from numpy import exp, linspace, meshgrid, pi
 from scipy import interpolate
 from scipy.integrate import cumulative_trapezoid
+from scipy.optimize import least_squares
 from scipy.spatial.distance import pdist, squareform
 
 from . import critical, machine, multigrid, polygons  # multigrid solver
@@ -82,8 +83,10 @@ class Equilibrium:
         boundary : callable
             The boundary condition function. Can be either `freeBoundary`
             or `fixedBoundary`.
-        psi : np.array
-            Initial guess for plasma flux [Webers/2pi]. If `None`, default initial guess used.
+        psi : np.array | None | callable
+            Initial guess for plasma flux [Webers/2pi]. If `None`, default initial Gaussian-shaped
+            guess used. If a callable is provided, it is called with the equilibrium to get the initial guess.
+            The array (returned by the callable) must have the shape (nx, ny).
         current : float
             Plasma current [A].
         order : int
@@ -122,16 +125,6 @@ class Equilibrium:
         # assign boundary function
         self._applyBoundary = boundary
 
-        # assign initial guess for plasma flux (if None)
-        if psi is None:
-            # Starting guess for psi
-            psi = self.create_psi_plasma_default()
-            self.gpars = np.array([0.5, 0.5, 0, 2])
-
-        if psi.shape != (nx, ny):
-            raise ValueError("Shape of psi must match grid size (nx, ny).")
-        self.plasma_psi = psi
-
         # generate Greens function mappings (used
         # in self.psi() to speed up calculations)
         self._pgreen = tokamak.createPsiGreens(self.R, self.Z)
@@ -158,78 +151,28 @@ class Equilibrium:
             nx, ny, generator, nlevels=1, ncycle=1, niter=2, direct=True
         )
 
+        # assign initial guess for plasma flux (if None)
+        if psi is None:
+            # Starting guess for psi using Gaussian-shape
+            psi_guess_callable = PsiGuessGaussian()
+            psi = psi_guess_callable(self)
+            self.gpars = np.array(psi_guess_callable.gpars)
+        elif callable(psi):
+            psi = psi(self)
+
+        if psi.shape != (nx, ny):
+            raise ValueError(
+                f"Shape of psi grid {psi.shape} must match grid size ({nx}, {ny})."
+            )
+        self.plasma_psi = psi
+
     def create_psi_plasma_default(
         self, adaptive_centre=False, gpars=(0.5, 0.5, 0, 2)
     ):
+        """This method is kept for backwards compatibility and will generate a Gaussian-shaped
+        initial guess for the plasma flux. It is NOT called by this class anymore.
         """
-        Generate a Gaussian-shaped initial guess for the plasma flux.
-
-        The flux function ψ(R, Z) is given by:
-
-            ψ(R, Z) = exp(C - (|x - xc|^p + |y - yc|^p))
-
-        where (xc, yc) is the center, C is a shift, and p is a power term.
-        The function ensures the flux is zero on the boundaries.
-
-        Parameters
-        ----------
-        adaptive_centre : bool, optional
-            If True, the plasma core position (xc, yc) is adjusted dynamically.
-            If False (default), it remains fixed.
-        gpars : tuple (xc, yc, C, p)
-            Parameters defining the flux shape:
-            - xc, yc : float
-                Coordinates of the flux center.
-            - C : float
-                Shift parameter in the exponent.
-            - p : float
-                Power of the distance term.
-
-        Returns
-        -------
-        np.array
-            The computed flux values on the given (R, Z) grid.
-        """
-
-        # define unit meshgrid
-        xx, yy = meshgrid(
-            linspace(0, 1, self.nx), linspace(0, 1, self.ny), indexing="ij"
-        )
-
-        # finds approximate (weighted) centre of the core plasma
-        if adaptive_centre == True:
-            ntot = np.sum(self.mask_inside_limiter)
-            xc = (
-                np.sum(
-                    self.mask_inside_limiter
-                    * linspace(0, 1, self.nx)[:, np.newaxis]
-                )
-                / ntot
-            )
-            yc = (
-                np.sum(
-                    self.mask_inside_limiter
-                    * linspace(0, 1, self.ny)[np.newaxis, :]
-                )
-                / ntot
-            )
-        # else sets centre according to gpars
-        else:
-            xc, yc = gpars[:2]
-
-        # generate the plasma flux
-        psi = exp(
-            gpars[2]
-            - ((np.abs(xx - xc)) ** gpars[3] + (np.abs(yy - yc)) ** gpars[3])
-        )
-
-        # set zero flux on boundary
-        psi[0, :] = 0.0
-        psi[:, 0] = 0.0
-        psi[-1, :] = 0.0
-        psi[:, -1] = 0.0
-
-        return psi
+        return PsiGuessGaussian(adaptive_centre, gpars)(self)
 
     def setSolverVcycle(self, nlevels=1, ncycle=1, niter=1, direct=True):
         """
@@ -2900,6 +2843,268 @@ def ellipse_points(R0, Z0, A, B, N=360):
     Z = Z0 + B * np.sin(theta)
 
     return np.column_stack((R, Z))
+
+
+class PsiGuessGaussian:
+    def __init__(
+        self,
+        adaptive_centre: bool = False,
+        gpars: tuple[float, ...] = (0.5, 0.5, 0, 2),
+    ):
+        """Class to generate a Gaussian-shaped initial guess for the plasma flux.
+
+        The flux function ψ(R, Z) is given by:
+
+            ψ(R, Z) = exp(C - (|x - xc|^p + |y - yc|^p))
+
+        where (xc, yc) is the center, C is a shift, and p is a power term.
+        The function ensures the flux is zero on the boundaries.
+
+        Parameters
+        ----------
+        adaptive_centre : bool, optional
+            If True, the plasma core position (xc, yc) is adjusted dynamically.
+            If False (default), it remains fixed.
+        gpars : tuple (xc, yc, C, p)
+            Parameters defining the flux shape:
+            - xc, yc : float
+                Coordinates of the flux center.
+            - C : float
+                Shift parameter in the exponent.
+            - p : float
+                Power of the distance term.
+        """
+        self._adaptive_centre = adaptive_centre
+        self.gpars = gpars
+
+    def __call__(self, eq):
+        """Calculate the initial Gaussian-shaped psi guess.
+
+        Returns
+        -------
+        np.array
+            The computed flux values on the given (R, Z) grid.
+        """
+
+        # define unit meshgrid
+        xx, yy = meshgrid(
+            linspace(0, 1, eq.nx), linspace(0, 1, eq.ny), indexing="ij"
+        )
+
+        # finds approximate (weighted) centre of the core plasma
+        if self._adaptive_centre:
+            ntot = np.sum(eq.mask_inside_limiter)
+            xc = (
+                np.sum(
+                    eq.mask_inside_limiter
+                    * linspace(0, 1, eq.nx)[:, np.newaxis]
+                )
+                / ntot
+            )
+            yc = (
+                np.sum(
+                    eq.mask_inside_limiter
+                    * linspace(0, 1, eq.ny)[np.newaxis, :]
+                )
+                / ntot
+            )
+        # else sets centre according to gpars
+        else:
+            xc, yc = self.gpars[:2]
+
+        # generate the plasma flux
+        psi = exp(
+            self.gpars[2]
+            - (
+                (np.abs(xx - xc)) ** self.gpars[3]
+                + (np.abs(yy - yc)) ** self.gpars[3]
+            )
+        )
+
+        # set zero flux on boundary
+        psi[0, :] = 0.0
+        psi[:, 0] = 0.0
+        psi[-1, :] = 0.0
+        psi[:, -1] = 0.0
+
+        return psi
+
+
+class PsiGuessParabolicJtor:
+    def __init__(self, h, k, a, b, Ip, *, psi_scale=1.0):
+        """A class to generate the initial psi guess from an elliptic description
+        of the plasma boundary and the plasma current.
+
+        We assume a plasma core with a separatrix that can be described by an ellipse. From this,
+        we create an elliptic distribution function E(R, Z) such that E(h, k) = 0 where (h, k) is the
+        centre of the ellipse and E(R, Z) = 1 for all points on the separatrix.
+
+        We assume a parabolic distribution of current and calculate Jtor using equation A.7 from [1]:
+            Jtor = Jhat(1-E(R,Z)^i)^j
+        Jhat is a constant found to match the calculated plasma current to the desired plasma current (Ip).
+
+        Finally, we apply a linear Grad-Shafranov step to find our estimate of the initial plasma psi.
+
+        Parameters
+        ----------
+        h : float
+            The radial centre of the ellipse [m].
+        k : float
+            The vertical centre of the ellipse [m].
+        a : float
+            Half the length of the radial axis of the ellipse (normally the semi-major axis).
+        b : float
+            Half the length of the vertical axis of the ellipse (normally the semi-minor axis).
+        Ip : float
+            The desired plasma current [A].
+        psi_scale : float
+            Multiplies the psi estimate when calling this class before returning.
+
+        References
+        ----------
+        [1] Wai, J. T., et al. "Feedforward equilibrium trajectory optimization with GSPulse." arXiv preprint arXiv:2506.21760 (2025).
+        """
+        self._h = h
+        self._k = k
+        self._a = a
+        self._b = b
+        self._Ip = Ip
+        self._psi_scale = psi_scale
+
+    @classmethod
+    def from_xpoint_and_midplane(
+        cls, Rx, Zx, Ri, Ro, Zm, Ip, *, psi_scale=1.0
+    ):
+        """Finds the elliptic distribution function that produces a boundary
+        according to the desired X-point location (Rx, Zx), inner midplane (Ri, Zm),
+        and outer midplane (Ro, Zm).
+
+        This assumes that the centroid of the ellipse (where the distribution function
+        is 0) occurs radially at the average of Rx, Ri, Ro.
+        """
+        h = (Rx + Ri + Ro) / 3
+        k = Zm
+        a = (Ro - Ri) / 2
+        b = Zx - Zm
+
+        return cls(h, k, a, b, Ip, psi_scale=psi_scale)
+
+    @classmethod
+    def from_separatrix_points(cls, Ip: float, *points, psi_scale=1.0):
+        """Finds the elliptic distribution function that best fits the
+        provided points that describe the desired core's separatrix.
+
+        Parameters
+        ----------
+        Ip : float
+            The desired plasma current [A].
+        points : tuple[tuple[float, float], ...]
+            A list of (R, Z) locations on the separatrix.
+
+        Notes
+        -----
+        This method requires at least 4 isoflux points
+        """
+        if len(points) < 4:
+            raise ValueError(
+                "At least 4 isoflux points required to approximate the ellipse shape parameters"
+            )
+
+        points_np = np.array(points)
+        Rpoints = points_np[:, 0]
+        Zpoints = points_np[:, 1]
+
+        def _func(args):
+            h, k, a, b = args.squeeze().tolist()
+
+            return cls._elliptic_function(Rpoints, Zpoints, h, k, a, b) - 1.0
+
+        result = least_squares(_func, [1.0] * 4, bounds=(0.0, np.inf))
+
+        return cls(*result.x.tolist(), Ip, psi_scale=psi_scale)
+
+    @staticmethod
+    def _elliptic_function(R, Z, h, k, a, b):
+        """Evaluates the elliptic function:
+            E(R, Z) = (R-h)^2/a^2 + (Z-k)^2/b^2
+
+        Parameters
+        ----------
+        h : float
+            The radial centre of the ellipse.
+        k : float
+            The vertical centre of the ellipse.
+        a : float
+            Half the length of the radial axis of the ellipse (normally the semi-major axis).
+        b : float
+            Half the length of the vertical axis of the ellipse (normally the semi-minor axis).
+        """
+        return (((R - h) ** 2) / a**2) + (((Z - k) ** 2) / b**2)
+
+    def elliptic_distribution_function(self, R, Z):
+        """The elliptic distribution function (E(R, Z)) for the ellipse represented by this class.
+
+        Parameters
+        ----------
+        R : float | ndarray
+            The radial position(s) to evaluate the distribution function at.
+        Z : float | ndarray
+            The vertical position(s) to evaluate the distribution function at.
+        """
+        return self._elliptic_function(
+            R, Z, self._h, self._k, self._a, self._b
+        )
+
+    def parabolic_jtor(self, eq, Ip, *, i=1.87, j=1.5):
+        """Calculate the Jtor assuming a parabolic current distribution for the given equilibrium.
+
+        Solves the equation:
+            Jtor = Jhat*(1-E(R,Z)^i)^j
+        where Jhat is calculated according to the desired Ip.
+
+        Parameters
+        ----------
+        eq : Equilibrium
+            The equilibrium object to calculate the initial psi for
+        Ip : float
+            The desired plasma current.
+        """
+        x = self.elliptic_distribution_function(eq.R, eq.Z)
+
+        # x > 1 indicates this grid point is outside of the core
+        # because E(R, Z) = 1 at the separatrix
+        outside_core_mask = x > 1
+        # Set x = 1 outside the core to ensure the plasma current
+        # is only distributed within the core
+        # Jtor outside plasma = (1 - 1**i)**j = 0
+        x[outside_core_mask] = 1.0
+
+        Jtor_normalised = (1 - x**i) ** j
+        Jtor_integrated = (
+            np.sum(Jtor_normalised[~outside_core_mask]) * eq.dR * eq.dZ
+        )
+
+        Jhat = Ip / Jtor_integrated
+
+        return Jhat * Jtor_normalised * ~outside_core_mask
+
+    def __call__(self, eq: Equilibrium):
+        """Calculates the initial psi guess by approximating the Jtor and
+        applying a linear Grad-Shafranov step.
+        """
+        # ensure equilibrium has attribute plasma_psi which will be overwritten later
+        eq.plasma_psi = np.zeros((eq.nx, eq.ny))
+
+        jtor_guess = self.parabolic_jtor(eq, self._Ip)
+        psi = eq.callSolver(psi=eq.plasma_psi, rhs=-mu0 * eq.R * jtor_guess)
+
+        # set zero flux on boundary
+        psi[0, :] = 0.0
+        psi[:, 0] = 0.0
+        psi[-1, :] = 0.0
+        psi[:, -1] = 0.0
+
+        return self._psi_scale * psi
 
 
 if __name__ == "__main__":
